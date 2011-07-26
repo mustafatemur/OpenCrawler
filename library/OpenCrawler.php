@@ -1,11 +1,45 @@
 <?php
 
-define('RETURN_REL_EMPTY', false);
-define('RETURN_PURL_FAIL', false);
-define('RETURN_PARSE_ERROR', false);
-
+/**
+ * 
+ * OpenCrawler is a PHP crawler in a standalone file
+ * @author Emanuele Minotto
+ *
+ */
 class OpenCrawler extends Zend_Controller_Plugin_Abstract
 {
+    /**
+     * 
+     * Agent (used in the User Agent and the control of robots.txt)
+     * @var string
+     */
+    private $agent = 'OpenCrawler';
+    /**
+     * 
+     * cURL referer for the extraction of content
+     * @var string
+     */
+    private $referer = 'https://github.com/EmanueleMinotto/OpenCrawler';
+    /**
+     * 
+     * Current version
+     * @var string
+     */
+    private $version = '0.4.0.0';
+    /**
+     * given the structure of the OpenCrawler history is impossible to determine the exact date of the visit of a given page, 
+     * so we need for the Re-visit policy set a minimum size limit for the array
+     * @link http://en.wikipedia.org/wiki/Web_crawler#Re-visit_policy
+     * @var int
+     */
+    private $history = 15000;
+    /**
+     * 
+     * Cookies file & directory
+     * @var string
+     */
+    private $cookies = dirname(__FILE__) . DIRECTORY_SEPARATOR . 'OpenCrawlerCookies.txt';
+    
     function __construct()
     {
         echo "Hello World!";
@@ -26,9 +60,42 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
         
     }
     
+    /**
+     * Loading the contents of the page with cURL
+     * @link http://php.net/curl
+     * @param string $url
+     * @return string
+     */
     public function loadContent($url)
     {
+        $curl = curl_init();
+        $options = array(
+            CURLOPT_URL => $url,
+            CURLOPT_HEADER => false,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_AUTOREFERER => true,
+            CURLOPT_BINARYTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_COOKIESESSION => true,
+            CURLOPT_COOKIEJAR => $this -> cookies,
+            CURLOPT_COOKIEFILE => $this -> cookies,
+            CURLOPT_REFERER => $this -> referer,
+            CURLOPT_USERAGENT => ini_get('user_agent'),
+            CURLOPT_TIMEOUT => 300,
+            CURLOPT_MAXREDIRS => 10
+        );
         
+        curl_setopt_array($curl, $options);
+        $content = curl_exec($curl);
+        
+        $this -> mOpenCrawler['CurlInfo'] = curl_getinfo($curl);
+        $this -> _bin['CurlInfo'][$url] =& $this -> mOpenCrawler['CurlInfo'];
+        
+        curl_close($curl);
+        
+        unset($curl, $options);
+        
+        return $content;
     }
 
     public function loadNext()
@@ -83,7 +150,7 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
         {
             if ($path == '')
             {
-                return RETURN_REL_EMPTY;
+                return false;
             }
             else
             {
@@ -108,7 +175,7 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
             }
             else
             {
-                return RETURN_PARSE_ERROR;
+                return false;
             }
         }
 
@@ -123,7 +190,7 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
             }
             else
             {
-                return RETURN_PURL_FAIL;
+                return false;
             }
         }
         if ($path == '')
