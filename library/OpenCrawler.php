@@ -9,6 +9,18 @@
 class OpenCrawler extends Zend_Controller_Plugin_Abstract
 {
     /**
+     * Global variable of this class
+     * Contains information regarding the current URL
+     * @var array
+     */
+    public $handler = array();
+    /**
+     * Global variable that contains the secondary information
+     * Contains information about the URLs visited on the duration of the instance
+     * @var array
+     */
+    protected $bin = array();
+    /**
      * 
      * Agent (used in the User Agent and the control of robots.txt)
      * @var string
@@ -21,12 +33,6 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
      */
     private $referer = 'https://github.com/EmanueleMinotto/OpenCrawler';
     /**
-     * 
-     * Current version
-     * @var string
-     */
-    private $version = '0.4.0.0';
-    /**
      * given the structure of the OpenCrawler history is impossible to determine the exact date of the visit of a given page, 
      * so we need for the Re-visit policy set a minimum size limit for the array
      * @link http://en.wikipedia.org/wiki/Web_crawler#Re-visit_policy
@@ -38,11 +44,15 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
      * Cookies file & directory
      * @var string
      */
-    private $cookies = dirname(__FILE__) . DIRECTORY_SEPARATOR . 'OpenCrawlerCookies.txt';
-    
+    private $cookies;
+
+    /**
+     * Class constructor
+     */
     function __construct()
     {
-        echo "Hello World!";
+        $this -> _bin['history'] = array();
+        $this -> cookies = dirname(__FILE__) . DIRECTORY_SEPARATOR . 'OpenCrawlerCookies.txt';
     }
 
     public function loadUrl($url)
@@ -55,9 +65,20 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
         
     }
 
-    public function parseHeaders($url)
+    /**
+     * Extraction of Headers, if you can not extract Headers returns an empty array
+     * @param string $url
+     * @return array
+     */
+    function parseHeaders($url)
     {
-        
+        $this -> _bin['headers'][$url] =& $headers;
+        try {
+            $headers = @get_headers($url, 1);
+            return $headers;
+        } catch (Exception $Exception) {
+            return array();
+        }
     }
     
     /**
