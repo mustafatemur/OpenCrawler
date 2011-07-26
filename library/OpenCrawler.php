@@ -60,9 +60,64 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
         
     }
 
+    /**
+     * robots.txt parsing
+     * Parse the robots.txt file in the root directory and returns an array with the path set out in an orderly array on the User-Agent, 
+     * the User-Agent default is the asterisk '*'
+     * @link http://www.conman.org/people/spc/robots2.html
+     * @param string $url
+     * @return array
+     */
     public function parseRobots($url)
     {
+        if (isset($this -> _bin['robots'][parse_url($url, PHP_URL_HOST)]))
+        {
+            return $this -> _bin['robots'][parse_url($url, PHP_URL_HOST)];
+        }
         
+        $url = parse_url($url, PHP_URL_SCHEME) . '://' . parse_url($url, PHP_URL_HOST) . '/robots.txt';
+        $robots = array();
+        $UserAgent = '*';
+        
+        $this -> _bin['robots'][parse_url($url, PHP_URL_HOST)] =& $robots;
+        
+        try
+        {
+            $rules = @file($url);
+        }
+        catch (Exception $Exception)
+        {
+            return array();
+        }
+        
+        /**
+         * @todo Controllo preg_match
+         */
+        for ($c = 0; $c < sizeof($rules); $c++)
+        {
+            $rule = trim(preg_replace('/(.*)?\#(.*)/', "$1", $rules[$c]));
+            if ($rule == null)
+            {
+                continue;
+            }
+            elseif (preg_match('/^User-Agent:(.*)/i', $rule, $match))
+            {
+                $UserAgent = trim($match[1]);
+            }
+            /*elseif (preg_match('/^Allow:(.*)\.([a-z0-9]+)$/i', $rule, $match) && trim($match[1]) != null && substr_count(trim($match[1]), '*') === 0)
+            {
+                $this -> PushLink($this -> CompleteUrl(trim($match[1])));
+            }*/
+            elseif (preg_match('/^Disallow:(.*)/i', $rule, $match) && trim($match[1]) != null)
+            {
+                $robots[$UserAgent][] = trim($match[1]);
+            }
+            elseif (preg_match('/^Crawl\-delay:(.*)/i', $rule, $match) && trim($match[1]) != null)
+            {
+                $robots[$UserAgent]['Crawl-delay'] = trim($match[1]);
+            }
+        }
+        return $robots;
     }
 
     /**
@@ -73,10 +128,13 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
     function parseHeaders($url)
     {
         $this -> _bin['headers'][$url] =& $headers;
-        try {
+        try
+        {
             $headers = @get_headers($url, 1);
             return $headers;
-        } catch (Exception $Exception) {
+        }
+        catch (Exception $Exception)
+        {
             return array();
         }
     }
@@ -105,7 +163,6 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
             CURLOPT_TIMEOUT => 300,
             CURLOPT_MAXREDIRS => 10
         );
-        
         curl_setopt_array($curl, $options);
         $content = curl_exec($curl);
         
@@ -113,9 +170,7 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
         $this -> _bin['CurlInfo'][$url] =& $this -> mOpenCrawler['CurlInfo'];
         
         curl_close($curl);
-        
         unset($curl, $options);
-        
         return $content;
     }
 
@@ -134,9 +189,44 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
         
     }
 
+    /**
+     * Check if the robot can visit a URL
+     * @param string $url Address to be checked
+     * @return bool
+     */
     public function crawlerAccess($url)
     {
-        
+        $domain = parse_url($url, PHP_URL_HOST);
+        $path = preg_replace('/^([a-z]+):\/\/([^\/]+)(.*)/', "$3", $url);
+        if (isset($this -> _bin['robots'][$domain]['*']))
+        {
+            foreach ($this -> _bin['robots'][$domain]['*'] as $k => $v)
+            {
+                if (is_string($v) && !is_numeric($v) && !is_bool($v))
+                {
+                    $line = str_replace('/', '\/', str_replace('\*', '.+', quotemeta($v)));
+                    if (preg_match('/^' . $line . '/', $path))
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+        if (isset($this -> _bin['robots'][$domain][$this -> agent]))
+        {
+            foreach ($this -> _bin['robots'][$domain][$this -> agent] as $k => $v)
+            {
+                if (is_string($v) && !is_numeric($v) && !is_bool($v))
+                {
+                    $line = str_replace('/', '\/', str_replace('\*', '.+', quotemeta($v)));
+                    if (preg_match('/^' . $line . '/', $path))
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
     }
 
     /**************************************************************
