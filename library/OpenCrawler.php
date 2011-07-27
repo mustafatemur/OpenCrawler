@@ -51,13 +51,174 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
      */
     function __construct()
     {
-        $this -> _bin['history'] = array();
+        $this -> bin['history'] = array();
         $this -> cookies = dirname(__FILE__) . DIRECTORY_SEPARATOR . 'OpenCrawlerCookies.txt';
     }
 
+    /**
+     * Main function of the class, parses and extracts the link to follow
+     * @param $url URL of the page to visit
+     */
     public function loadUrl($url)
     {
+        if (trim($url) == '')
+        {
+            return false;
+        }
         
+        $url = !preg_match('/^([a-z]+):\/\/(.*)/', $url) ? 'http://' . str_replace('://', null, $url) : $url;
+        $url .= !@parse_url($url, PHP_URL_PATH) ? '/' : null;
+        
+        /**
+         * Compatibility with the User-Agent browser without losing the special crawler
+         */
+        ini_set('user_agent', 'Mozilla/5.0 (compatible; ' . $this -> agent . '; +' . $this -> referer . '; Trident/4.0)');
+        
+        /**
+         * Redirect via HTTP Location
+         */
+        $temp = $this -> parseHeaders($url);
+        $counterHeaders = 0;
+        while ($counterHeaders < 10 && ((isset($temp['Location']) && $temp['Location'] != $url) || (isset($temp['Content-Location']) && $temp['Content-Location'] != $url)))
+        {
+            if (!array_search($url, $this -> bin['history']))
+            {
+                $this -> bin['history'][] = $url;
+                array_values(array_unique($this -> bin['history']));
+            }
+            
+            if (isset($temp['Location']))
+            {
+                if (is_array($temp['Location']))
+                {
+                    $temp['Location'] = $temp['Location'][sizeof($temp['Location']) - 1];
+                }
+                $FullUri = $this -> completeUrl($url, $temp['Location']);
+                
+            }
+            else
+            {
+                break;
+            }
+            
+            $url = $FullUri;
+            $temp = $this -> ParseHeaders($url);
+        }
+        
+        if (!array_search($url, $this -> bin['history']))
+        {
+            $this -> bin['history'][] = $url;
+        }
+        
+        $this -> handler['headers'] = $temp;
+        unset($temp);
+        
+        $this -> handler['url'] =& $url;
+        
+        if ($key = array_search($url, $this -> bin['history']))
+        {
+            for ($c = $key - 1; ($c > 0 && $c > $key - 6); $c--)
+            {
+                if ($this -> bin['history'][$c] == $url)
+                {
+                    return $this -> loadNext();
+                }
+            }
+        }
+        
+        $temp =& $this -> handler['headers']['Content-Type'];
+        if (is_array($temp))
+        {
+            $temp = $temp[sizeof($temp) - 1];
+        }
+        
+        if (!isset($temp) || !preg_match('/(x|ht)ml/', $temp))
+        {
+            return false;
+        }
+        
+        /**
+         * Robot access control
+         */
+        $this -> handler['robots'] = $this -> parseRobots($url);
+        
+        if (!$this -> crawlerAccess($url))
+        {
+            return false;
+        }
+        
+        /**
+         * Extraction of Contents
+         */
+        $this -> handler['DOMDocument'] = new DOMDocument;
+        $this -> handler['DOMDocument'] -> loadHTML($this -> LoadContent($url));
+        
+        if ($metas = $this -> handler['DOMDocument'] -> getElementsByTagName('meta'))
+        {
+            for ($c = 0; $c < $metas -> length; $c++)
+            {
+                $meta = $metas -> item($c);
+                
+                if (strtolower($meta -> attributes -> getNamedItem("http-equiv") -> nodeValue) === "refresh")
+                {
+                    $metaContent = strtolower($meta -> attributes -> getNamedItem("content") -> nodeValue);
+                    $newPath = preg_replace('/(.*)url=(.*)$/i', "$2", $metaContent);
+                    $newUrl = $this -> completeUrl($url, $newPath);
+                    if (!is_numeric($newPath) && $newUrl != $url && array_key_exists('scheme', parse_url($newUrl)))
+                    {
+                        return $this -> loadUrl($newUrl);
+                    }
+                    
+                }
+                elseif (strtolower($meta -> attributes -> getNamedItem("name") -> nodeValue) === "robots")
+                {
+                    $metaContent = strtolower($meta -> attributes -> getNamedItem("content") -> nodeValue);
+                    $metaRobots = explode(',', $metaContent);
+                    foreach ($metaRobots as $k => $v)
+                    {
+                        $metaRobots[$k] = trim($v);
+                    }
+                    
+                }
+            }
+        }
+        
+        if ($links = $this -> handler['DOMDocument'] -> getElementsByTagName('link'))
+        {
+            for ($c = 0; $c < $links -> length; $c++)
+            {
+                $link = $links -> item($c);
+                
+                if (strtolower($link -> attributes -> getNamedItem("rel") -> nodeValue) === "canonical")
+                {
+                    $url = $this -> completeUrl($link -> attributes -> getNamedItem("href") -> nodeValue);
+                }
+                elseif (array_search(strtolower($link -> attributes -> getNamedItem("rel") -> nodeValue), array(
+                    'appendix', 'chapter', 'contents', 'copyright', 'glossary', 'help', 'index', 'license', 'next', 'prev', 'previous', 'section', 'start', 
+                    'subsection', 'tag', 'toc', 'home', 'directory', 'bibliography', 'cite', 'archive', 'archives', 'external'
+                    )))
+                {
+                    $this -> pushLink($this -> completeUrl($link -> attributes -> getNamedItem("href") -> nodeValue));
+                }
+                
+            }
+        }
+        
+        if (!isset($metaRobots) || !array_search('nofollow', $metaRobots))
+        {
+            $this -> loadLinks($this -> handler['DOMDocument']);
+        }
+        
+        if (isset($metaRobots) && array_search('noindex', $metaRobots))
+        {
+            return false;
+        }
+        
+        $this -> bin['history'] = array_values(array_unique($this -> bin['history']));
+        $this -> handler['a'] = array_values(array_unique($this -> handler['a']));
+        
+        ini_restore('user_agent');
+        return true;
     }
 
     /**
@@ -70,16 +231,17 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
      */
     public function parseRobots($url)
     {
-        if (isset($this -> _bin['robots'][parse_url($url, PHP_URL_HOST)]))
+        $host = parse_url($url, PHP_URL_HOST);
+        if (isset($this -> bin['robots'][$host]))
         {
-            return $this -> _bin['robots'][parse_url($url, PHP_URL_HOST)];
+            return $this -> bin['robots'][$host];
         }
         
-        $url = parse_url($url, PHP_URL_SCHEME) . '://' . parse_url($url, PHP_URL_HOST) . '/robots.txt';
+        $url = parse_url($url, PHP_URL_SCHEME) . '://' . $host . '/robots.txt';
         $robots = array();
         $UserAgent = '*';
         
-        $this -> _bin['robots'][parse_url($url, PHP_URL_HOST)] =& $robots;
+        $this -> bin['robots'][$host] =& $robots;
         
         try
         {
@@ -104,10 +266,6 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
             {
                 $UserAgent = trim($match[1]);
             }
-            /*elseif (preg_match('/^Allow:(.*)\.([a-z0-9]+)$/i', $rule, $match) && trim($match[1]) != null && substr_count(trim($match[1]), '*') === 0)
-            {
-                $this -> PushLink($this -> CompleteUrl(trim($match[1])));
-            }*/
             elseif (preg_match('/^Disallow:(.*)/i', $rule, $match) && trim($match[1]) != null)
             {
                 $robots[$UserAgent][] = trim($match[1]);
@@ -127,7 +285,7 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
      */
     function parseHeaders($url)
     {
-        $this -> _bin['headers'][$url] =& $headers;
+        $this -> bin['headers'][$url] =& $headers;
         try
         {
             $headers = @get_headers($url, 1);
@@ -145,7 +303,7 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
      * @param string $url
      * @return string
      */
-    public function loadContent($url)
+    public function loadContent($url, $config = array())
     {
         $curl = curl_init();
         $options = array(
@@ -163,30 +321,140 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
             CURLOPT_TIMEOUT => 300,
             CURLOPT_MAXREDIRS => 10
         );
-        curl_setopt_array($curl, $options);
+        curl_setopt_array($curl, array_merge($options, $config));
         $content = curl_exec($curl);
         
-        $this -> mOpenCrawler['CurlInfo'] = curl_getinfo($curl);
-        $this -> _bin['CurlInfo'][$url] =& $this -> mOpenCrawler['CurlInfo'];
+        $this -> handler['CurlInfo'] = curl_getinfo($curl);
+        $this -> bin['CurlInfo'][$url] =& $this -> handler['CurlInfo'];
         
         curl_close($curl);
         unset($curl, $options);
         return $content;
     }
 
+    /**
+     * Loading the next link in this bin[history]
+     */
     public function loadNext()
     {
+        $this -> _bin['history'] = array_values(array_unique($this -> _bin['history']));
+        if (isset($this -> handler['a']))
+        {
+            $this -> handler['a'] = array_values(array_unique($this -> handler['a']));
+        }
         
+        if (sizeof($this -> _bin['history']) > $this -> history)
+        {
+            while (sizeof($this -> _bin['history']) > $this -> history)
+            {
+                $this -> _bin['history'] = array_shift($this -> _bin['history']);
+            }
+            $this -> _bin['history'] = array_values(array_unique($this -> _bin['history']));
+        }
+        
+        $key = array_search($this -> handler['url'], $this -> _bin['history']);
+        if (isset($this -> _bin['history'][$key + 1]))
+        {
+            if (
+                parse_url($this -> _bin['history'][$key], PHP_URL_HOST) == parse_url($this -> _bin['history'][$key + 1], PHP_URL_HOST)
+            )
+            {
+                $domain = parse_url($this -> _bin['history'][$key], PHP_URL_HOST);
+                if (isset($this -> _bin['robots'][$domain]['*']['Crawl-delay']))
+                {
+                    $tempG = $this -> _bin['robots'][$domain]['*']['Crawl-delay'];
+                }
+                
+                if (isset($this -> _bin['robots'][$domain][$this -> agent]['Crawl-delay']))
+                {
+                    $tempS = $this -> _bin['robots'][$domain][$this -> agent]['Crawl-delay'];
+                }
+                
+                if (isset($tempS) && is_numeric($tempS))
+                {
+                    sleep($tempS);
+                }
+                elseif (isset($tempG) && is_numeric($tempG))
+                {
+                    sleep($tempG);
+                }
+                
+            }
+            $this -> loadUrl($this -> _bin['history'][$key + 1]);
+        }
+        else
+        {
+            return false;
+        }
     }
 
+    /**
+     * Extraction of anchor links via the DOMDocument object
+     * @param mixed &$DOMDocument DOMDocument Object
+     */
     public function loadLinks(&$DOMDocument)
     {
+        $bases = $DOMDocument -> getElementsByTagName('base');
+        $base = ($bases -> length && $bases -> item(0) -> attributes -> getNamedItem("href") -> nodeValue) ? $bases -> item(0) -> attributes -> getNamedItem("href") -> nodeValue : $this -> handler['url'];
         
+        $this -> handler['a'] = array();
+        
+        foreach ($DOMDocument -> getElementsByTagName('a') as $a)
+        {
+            $aHref = $this -> completeUrl($base, $a -> attributes -> getNamedItem("href") -> nodeValue);
+            
+            if (preg_match('/^(javascript\:)/', $aHref))
+            {
+                continue;
+            }
+            
+            if (!isset($aHref) || array_search($aHref, $this -> handler['a']))
+            {
+                continue;
+            }
+            
+            if (array_search('nofollow', explode(' ', $a -> attributes -> getNamedItem("rel") -> nodeValue)))
+            {
+                continue;
+            }
+            
+            $this -> pushLink($aHref);
+        }
+        $this -> bin['history'] = array_values(array_unique($this -> bin['history']));
+        $this -> handler['a'] = array_values(array_unique($this -> handler['a']));
     }
 
+    /**
+     * Loading a single Link
+     * @param string $url Link to push in the internal stack
+     */
     public function pushLink($url)
     {
+        if (!preg_match('/^!/', parse_url($url, PHP_URL_FRAGMENT)))
+        {
+            $url = preg_replace('/^([^#]+)(#.+)$/', "$1", $url);
+        }
         
+        if (!isset($url) || array_search($url, $this -> handler['a']))
+        {
+            return false;
+        }
+        
+        if (array_search($url, $this -> bin['history']) || $url == $this -> handler['url'])
+        {
+            return false;
+        }
+        
+        if (!$this -> crawlerAccess($url))
+        {
+            return false;
+        }
+        
+        if (array_key_exists('scheme', parse_url($url)) && preg_match('/^https?:/', $url))
+        {
+            $this -> handler['a'][] = trim($url);
+            $this -> bin['history'][] = trim($url);
+        }
     }
 
     /**
@@ -198,32 +466,22 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
     {
         $domain = parse_url($url, PHP_URL_HOST);
         $path = preg_replace('/^([a-z]+):\/\/([^\/]+)(.*)/', "$3", $url);
-        if (isset($this -> _bin['robots'][$domain]['*']))
+        foreach ($this -> bin['robots'][$domain] as $agent => $rules)
         {
-            foreach ($this -> _bin['robots'][$domain]['*'] as $k => $v)
+            if (preg_match($agent, $this -> agent))
             {
-                if (is_string($v) && !is_numeric($v) && !is_bool($v))
+                foreach ($this -> bin['robots'][$domain][$agent] as $k => $v)
                 {
-                    $line = str_replace('/', '\/', str_replace('\*', '.+', quotemeta($v)));
-                    if (preg_match('/^' . $line . '/', $path))
+                    if (is_string($v) && !is_numeric($v) && !is_bool($v))
                     {
-                        return false;
+                        $line = str_replace('/', '\/', str_replace('\*', '.+', quotemeta($v)));
+                        if (preg_match('/^' . $line . '/', $path))
+                        {
+                            return false;
+                        }
                     }
                 }
-            }
-        }
-        if (isset($this -> _bin['robots'][$domain][$this -> agent]))
-        {
-            foreach ($this -> _bin['robots'][$domain][$this -> agent] as $k => $v)
-            {
-                if (is_string($v) && !is_numeric($v) && !is_bool($v))
-                {
-                    $line = str_replace('/', '\/', str_replace('\*', '.+', quotemeta($v)));
-                    if (preg_match('/^' . $line . '/', $path))
-                    {
-                        return false;
-                    }
-                }
+                break;
             }
         }
         return true;
