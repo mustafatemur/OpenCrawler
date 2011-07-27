@@ -166,7 +166,7 @@ class OpenCrawler
             {
                 $meta = $metas -> item($c);
                 
-                if (strtolower($meta -> attributes -> getNamedItem("http-equiv") -> nodeValue) === "refresh")
+                if (isset($meta -> attributes -> getNamedItem("http-equiv") -> nodeValue) && strtolower($meta -> attributes -> getNamedItem("http-equiv") -> nodeValue) === "refresh")
                 {
                     $metaContent = strtolower($meta -> attributes -> getNamedItem("content") -> nodeValue);
                     $newPath = preg_replace('/(.*)url=(.*)$/i', "$2", $metaContent);
