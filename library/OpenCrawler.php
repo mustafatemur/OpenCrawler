@@ -426,7 +426,11 @@ class OpenCrawler
     public function loadLinks(&$DOMDocument)
     {
         $bases = $DOMDocument -> getElementsByTagName('base');
-        $base = ($bases -> length && $bases -> item(0) -> attributes -> getNamedItem("href") -> nodeValue) ? $bases -> item(0) -> attributes -> getNamedItem("href") -> nodeValue : $this -> handler['url'];
+        $base = $this -> handler['url'];
+        if ($bases -> length && $tmp_href =& $bases -> item(0) -> attributes -> getNamedItem("href") && $tmp_href -> nodeValue)
+        {
+            $base = $bases -> item(0) -> attributes -> getNamedItem("href") -> nodeValue;
+        }
         
         $this -> handler['a'] = array();
         
