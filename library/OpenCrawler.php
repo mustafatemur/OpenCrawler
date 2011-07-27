@@ -2,16 +2,22 @@
 
 /**
  * 
+ * cURL referer for the extraction of content
+ * @var string
+ */
+define('OPENCRAWLER_REFERER', 'https://github.com/EmanueleMinotto/OpenCrawler');
+/**
+ * 
  * Agent (used in the User Agent and the control of robots.txt)
  * @var string
  */
 define('OPENCRAWLER_AGENT', 'OpenCrawler');
 /**
  * 
- * cURL referer for the extraction of content
+ * Compatibility with the User-Agent browser without losing the special crawler
  * @var string
  */
-define('OPENCRAWLER_REFERER', 'https://github.com/EmanueleMinotto/OpenCrawler');
+define('OPENCRAWLER_USERAGENT', 'Mozilla/5.0 (compatible; ' . OPENCRAWLER_AGENT . '; +' . OPENCRAWLER_REFERER . '; Trident/4.0)');
 /**
  * given the structure of the OpenCrawler history is impossible to determine the exact date of the visit of a given page, 
  * so we need for the Re-visit policy set a minimum size limit for the array
@@ -75,11 +81,6 @@ class OpenCrawler
         
         $url = !preg_match('/^([a-z]+):\/\/(.*)/', $url) ? 'http://' . str_replace('://', null, $url) : $url;
         $url .= !@parse_url($url, PHP_URL_PATH) ? '/' : null;
-        
-        /**
-         * Compatibility with the User-Agent browser without losing the special crawler
-         */
-        ini_set('user_agent', 'Mozilla/5.0 (compatible; ' . OPENCRAWLER_AGENT . '; +' . OPENCRAWLER_REFERER . '; Trident/4.0)');
         
         /**
          * Redirect via HTTP Location
@@ -224,7 +225,6 @@ class OpenCrawler
         $this -> bin['history'] = array_values(array_unique($this -> bin['history']));
         $this -> handler['a'] = array_values(array_unique($this -> handler['a']));
         
-        ini_restore('user_agent');
         return true;
     }
 
@@ -324,7 +324,7 @@ class OpenCrawler
             CURLOPT_COOKIEJAR => OPENCRAWLER_COOKIES,
             CURLOPT_COOKIEFILE => OPENCRAWLER_COOKIES,
             CURLOPT_REFERER => OPENCRAWLER_REFERER,
-            CURLOPT_USERAGENT => ini_get('user_agent'),
+            CURLOPT_USERAGENT => OPENCRAWLER_USERAGENT,
             CURLOPT_TIMEOUT => 300,
             CURLOPT_MAXREDIRS => 10
         );
@@ -344,50 +344,46 @@ class OpenCrawler
      */
     public function loadNext()
     {
-        $this -> _bin['history'] = array_values(array_unique($this -> _bin['history']));
+        $this -> bin['history'] = array_values(array_unique($this -> bin['history']));
         if (isset($this -> handler['a']))
         {
             $this -> handler['a'] = array_values(array_unique($this -> handler['a']));
         }
         
-        if (sizeof($this -> _bin['history']) > OPENCRAWLER_HISTORY)
+        if (sizeof($this -> bin['history']) > OPENCRAWLER_HISTORY)
         {
-            while (sizeof($this -> _bin['history']) > OPENCRAWLER_HISTORY)
+            while (sizeof($this -> bin['history']) > OPENCRAWLER_HISTORY)
             {
-                $this -> _bin['history'] = array_shift($this -> _bin['history']);
+                $this -> bin['history'] = array_shift($this -> bin['history']);
             }
-            $this -> _bin['history'] = array_values(array_unique($this -> _bin['history']));
+            $this -> bin['history'] = array_values(array_unique($this -> bin['history']));
         }
         
-        $key = array_search($this -> handler['url'], $this -> _bin['history']);
-        if (isset($this -> _bin['history'][$key + 1]))
+        $key = array_search($this -> handler['url'], $this -> bin['history']);
+        if (isset($this -> bin['history'][$key + 1]))
         {
-            if (
-                parse_url($this -> _bin['history'][$key], PHP_URL_HOST) == parse_url($this -> _bin['history'][$key + 1], PHP_URL_HOST)
-            )
+            if (parse_url($this -> bin['history'][$key], PHP_URL_HOST) == parse_url($this -> bin['history'][$key + 1], PHP_URL_HOST))
             {
-                $domain = parse_url($this -> _bin['history'][$key], PHP_URL_HOST);
-                if (isset($this -> _bin['robots'][$domain]['*']['Crawl-delay']))
+                $domain = parse_url($this -> bin['history'][$key], PHP_URL_HOST);
+                foreach ($this -> bin['robots'][$domain] as $agent => $rules)
                 {
-                    $tempG = $this -> _bin['robots'][$domain]['*']['Crawl-delay'];
+                    if (isset($rules['Crawl-delay']))
+                    {
+                        $tempS = $rules['Crawl-delay'];
+                    }
                 }
-                
-                if (isset($this -> _bin['robots'][$domain][OPENCRAWLER_AGENT]['Crawl-delay']))
+                if (isset($this -> bin['robots'][$domain][OPENCRAWLER_AGENT]['Crawl-delay']))
                 {
-                    $tempS = $this -> _bin['robots'][$domain][OPENCRAWLER_AGENT]['Crawl-delay'];
+                    $tempS = $this -> bin['robots'][$domain][OPENCRAWLER_AGENT]['Crawl-delay'];
                 }
                 
                 if (isset($tempS) && is_numeric($tempS))
                 {
                     sleep($tempS);
                 }
-                elseif (isset($tempG) && is_numeric($tempG))
-                {
-                    sleep($tempG);
-                }
                 
             }
-            $this -> loadUrl($this -> _bin['history'][$key + 1]);
+            $this -> loadUrl($this -> bin['history'][$key + 1]);
         }
         else
         {
