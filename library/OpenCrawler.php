@@ -1,32 +1,28 @@
 <?php
 
 /**
- * 
  * cURL referer for the extraction of content
  * @var string
  */
 define('OPENCRAWLER_REFERER', 'https://github.com/EmanueleMinotto/OpenCrawler');
 /**
- * 
  * Agent (used in the User Agent and the control of robots.txt)
  * @var string
  */
 define('OPENCRAWLER_AGENT', 'OpenCrawler');
 /**
- * 
  * Compatibility with the User-Agent browser without losing the special crawler
  * @var string
  */
 define('OPENCRAWLER_USERAGENT', 'Mozilla/5.0 (compatible; ' . OPENCRAWLER_AGENT . '; +' . OPENCRAWLER_REFERER . '; Trident/4.0)');
 /**
- * given the structure of the OpenCrawler history is impossible to determine the exact date of the visit of a given page, 
+ * Given the structure of the OpenCrawler history is impossible to determine the exact date of the visit of a given page, 
  * so we need for the Re-visit policy set a minimum size limit for the array
  * @link http://en.wikipedia.org/wiki/Web_crawler#Re-visit_policy
  * @var int
  */
 define('OPENCRAWLER_HISTORY', 15000);
 /**
- * 
  * Cookies file & directory
  * @var string
  */
@@ -35,7 +31,7 @@ define('OPENCRAWLER_COOKIES', dirname(__FILE__) . DIRECTORY_SEPARATOR . 'OpenCra
 /**
  * OpenCrawler
  * 
- * Class for spidering the network in a standalone file
+ * Class for spidering the network, in a standalone file
  * 
  * Examinations are conducted in width, 
  * extracting all possible information including: content, dom (DOMDocument), 
@@ -295,15 +291,41 @@ class OpenCrawler
     function parseHeaders($url)
     {
         $this -> bin['headers'][$url] =& $headers;
-        try
+        
+        $curl = curl_init();
+        $options = array(
+            CURLOPT_URL => $url,
+            CURLOPT_HEADER => true,
+            CURLOPT_FILETIME => true,
+            CURLOPT_NOBODY => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_AUTOREFERER => true,
+            CURLOPT_BINARYTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_COOKIESESSION => true,
+            CURLOPT_COOKIEJAR => OPENCRAWLER_COOKIES,
+            CURLOPT_COOKIEFILE => OPENCRAWLER_COOKIES,
+            CURLOPT_REFERER => OPENCRAWLER_REFERER,
+            CURLOPT_USERAGENT => OPENCRAWLER_USERAGENT,
+            CURLOPT_TIMEOUT => 300,
+            CURLOPT_MAXREDIRS => 10
+        );
+        curl_setopt_array($curl, $options);
+        $headers = curl_exec($curl);
+        
+        $headers = preg_split('/[\n|\r]/', $headers, 0, PREG_SPLIT_NO_EMPTY);
+        foreach ($headers as $k => $v)
         {
-            $headers = @get_headers($url, 1);
-            return $headers;
+            if (!preg_match('/^([^:]+):( +)?(.*)$/', $v, $matches))
+            {
+                continue;
+            }
+            unset($headers[$k]);
+            $headers[trim($matches[1])] = $matches[3];
         }
-        catch (Exception $Exception)
-        {
-            return array();
-        }
+        
+        curl_close($curl);
+        return $headers;
     }
     
     /**
@@ -507,6 +529,17 @@ class OpenCrawler
             }
         }
         return true;
+    }
+    
+    public function getHistory()
+    {
+        return $this -> bin['history'];
+    }
+    
+    public function clearHistory()
+    {
+        $this -> bin['history'] = array();
+        return $this;
     }
 
     /**************************************************************
