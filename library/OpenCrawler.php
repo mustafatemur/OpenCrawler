@@ -1,12 +1,19 @@
 <?php
 
 /**
+ * OpenCrawler
  * 
- * OpenCrawler is a PHP crawler in a standalone file
+ * Class for spidering the network in a standalone file
+ * 
+ * Examinations are conducted in width, 
+ * extracting all possible information including: content, dom (DOMDocument), 
+ * headers, robots.txt, download speeds and data-satellite...
+ * @link http://en.wikipedia.org/wiki/Breadth-first_search
+ * @link https://github.com/EmanueleMinotto/OpenCrawler
+ * @license http://www.gnu.org/licenses/gpl.html GNU General Public License v3
  * @author Emanuele Minotto
- *
  */
-class OpenCrawler extends Zend_Controller_Plugin_Abstract
+class OpenCrawler
 {
     /**
      * Global variable of this class
@@ -93,7 +100,7 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
                 {
                     $temp['Location'] = $temp['Location'][sizeof($temp['Location']) - 1];
                 }
-                $FullUri = $this -> completeUrl($url, $temp['Location']);
+                $FullUri = $this -> absoluteUrl($url, $temp['Location']);
                 
             }
             else
@@ -151,7 +158,7 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
          * Extraction of Contents
          */
         $this -> handler['DOMDocument'] = new DOMDocument;
-        $this -> handler['DOMDocument'] -> loadHTML($this -> LoadContent($url));
+        @$this -> handler['DOMDocument'] -> loadHTML($this -> loadContent($url));
         
         if ($metas = $this -> handler['DOMDocument'] -> getElementsByTagName('meta'))
         {
@@ -163,14 +170,14 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
                 {
                     $metaContent = strtolower($meta -> attributes -> getNamedItem("content") -> nodeValue);
                     $newPath = preg_replace('/(.*)url=(.*)$/i', "$2", $metaContent);
-                    $newUrl = $this -> completeUrl($url, $newPath);
+                    $newUrl = $this -> absoluteUrl($url, $newPath);
                     if (!is_numeric($newPath) && $newUrl != $url && array_key_exists('scheme', parse_url($newUrl)))
                     {
                         return $this -> loadUrl($newUrl);
                     }
                     
                 }
-                elseif (strtolower($meta -> attributes -> getNamedItem("name") -> nodeValue) === "robots")
+                elseif (isset($meta -> attributes -> getNamedItem("name") -> nodeValue) && strtolower($meta -> attributes -> getNamedItem("name") -> nodeValue) === "robots")
                 {
                     $metaContent = strtolower($meta -> attributes -> getNamedItem("content") -> nodeValue);
                     $metaRobots = explode(',', $metaContent);
@@ -191,14 +198,14 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
                 
                 if (strtolower($link -> attributes -> getNamedItem("rel") -> nodeValue) === "canonical")
                 {
-                    $url = $this -> completeUrl($link -> attributes -> getNamedItem("href") -> nodeValue);
+                    $url = $this -> absoluteUrl($link -> attributes -> getNamedItem("href") -> nodeValue);
                 }
                 elseif (array_search(strtolower($link -> attributes -> getNamedItem("rel") -> nodeValue), array(
                     'appendix', 'chapter', 'contents', 'copyright', 'glossary', 'help', 'index', 'license', 'next', 'prev', 'previous', 'section', 'start', 
                     'subsection', 'tag', 'toc', 'home', 'directory', 'bibliography', 'cite', 'archive', 'archives', 'external'
                     )))
                 {
-                    $this -> pushLink($this -> completeUrl($link -> attributes -> getNamedItem("href") -> nodeValue));
+                    $this -> pushLink($this -> absoluteUrl($link -> attributes -> getNamedItem("href") -> nodeValue));
                 }
                 
             }
@@ -303,7 +310,7 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
      * @param string $url
      * @return string
      */
-    public function loadContent($url, $config = array())
+    public function loadContent($url)
     {
         $curl = curl_init();
         $options = array(
@@ -321,7 +328,7 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
             CURLOPT_TIMEOUT => 300,
             CURLOPT_MAXREDIRS => 10
         );
-        curl_setopt_array($curl, array_merge($options, $config));
+        curl_setopt_array($curl, $options);
         $content = curl_exec($curl);
         
         $this -> handler['CurlInfo'] = curl_getinfo($curl);
@@ -401,7 +408,7 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
         
         foreach ($DOMDocument -> getElementsByTagName('a') as $a)
         {
-            $aHref = $this -> completeUrl($base, $a -> attributes -> getNamedItem("href") -> nodeValue);
+            $aHref = $this -> absoluteUrl($base, $a -> attributes -> getNamedItem("href") -> nodeValue);
             
             if (preg_match('/^(javascript\:)/', $aHref))
             {
@@ -413,9 +420,12 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
                 continue;
             }
             
-            if (array_search('nofollow', explode(' ', $a -> attributes -> getNamedItem("rel") -> nodeValue)))
+            if (isset($a -> attributes -> getNamedItem("rel") -> nodeValue))
             {
-                continue;
+                if (array_search('nofollow', explode(' ', $a -> attributes -> getNamedItem("rel") -> nodeValue)))
+                {
+                    continue;
+                }
             }
             
             $this -> pushLink($aHref);
@@ -466,22 +476,29 @@ class OpenCrawler extends Zend_Controller_Plugin_Abstract
     {
         $domain = parse_url($url, PHP_URL_HOST);
         $path = preg_replace('/^([a-z]+):\/\/([^\/]+)(.*)/', "$3", $url);
-        foreach ($this -> bin['robots'][$domain] as $agent => $rules)
+        if (isset($this -> bin['robots'][$domain]))
         {
-            if (preg_match($agent, $this -> agent))
+            foreach ($this -> bin['robots'][$domain] as $agent => $rules)
             {
-                foreach ($this -> bin['robots'][$domain][$agent] as $k => $v)
+                if (trim($agent) == '')
                 {
-                    if (is_string($v) && !is_numeric($v) && !is_bool($v))
+                    continue;
+                }
+                if (preg_match('/^'.str_replace('*', '.*', $agent).'$/i', $this -> agent))
+                {
+                    foreach ($this -> bin['robots'][$domain][$agent] as $k => $v)
                     {
-                        $line = str_replace('/', '\/', str_replace('\*', '.+', quotemeta($v)));
-                        if (preg_match('/^' . $line . '/', $path))
+                        if (is_string($v) && !is_numeric($v) && !is_bool($v))
                         {
-                            return false;
+                            $line = str_replace('/', '\/', str_replace('\*', '.+', quotemeta($v)));
+                            if (preg_match('/^' . $line . '/', $path))
+                            {
+                                return false;
+                            }
                         }
                     }
+                    break;
                 }
-                break;
             }
         }
         return true;
