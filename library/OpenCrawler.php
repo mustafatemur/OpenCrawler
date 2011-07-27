@@ -473,6 +473,8 @@ class OpenCrawler
      */
     public function pushLink($url)
     {
+        $url = $this -> absoluteUrl($this -> handler['url'], $url);
+        
         if (!preg_match('/^!/', parse_url($url, PHP_URL_FRAGMENT)))
         {
             $url = preg_replace('/^([^#]+)(#.+)$/', "$1", $url);
@@ -493,10 +495,13 @@ class OpenCrawler
             return false;
         }
         
-        if (array_key_exists('scheme', parse_url($url)) && preg_match('/^https?:/', $url))
+        if ($parsed = @parse_url($url) && isset($parsed) && is_array($parsed))
         {
-            $this -> handler['a'][] = trim($url);
-            $this -> bin['history'][] = trim($url);
+            if (array_key_exists('scheme', $parsed) && preg_match('/^https?:/', $url))
+            {
+                $this -> handler['a'][] = trim($url);
+                $this -> bin['history'][] = trim($url);
+            }
         }
     }
 
