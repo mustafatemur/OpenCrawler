@@ -166,10 +166,11 @@ class OpenCrawler
             for ($c = 0; $c < $metas -> length; $c++)
             {
                 $meta = $metas -> item($c);
+                $attrs =& $meta -> attributes;
                 
-                if (isset($meta -> attributes -> getNamedItem("http-equiv") -> nodeValue) && strtolower($meta -> attributes -> getNamedItem("http-equiv") -> nodeValue) === "refresh")
+                if (isset($attrs -> getNamedItem("http-equiv") -> nodeValue) && strtolower($attrs -> getNamedItem("http-equiv") -> nodeValue) === "refresh")
                 {
-                    $metaContent = strtolower($meta -> attributes -> getNamedItem("content") -> nodeValue);
+                    $metaContent = strtolower($attrs -> getNamedItem("content") -> nodeValue);
                     $newPath = preg_replace('/(.*)url=(.*)$/i', "$2", $metaContent);
                     $newUrl = $this -> absoluteUrl($url, $newPath);
                     if (!is_numeric($newPath) && $newUrl != $url && array_key_exists('scheme', parse_url($newUrl)))
@@ -178,9 +179,9 @@ class OpenCrawler
                     }
                     
                 }
-                elseif (isset($meta -> attributes -> getNamedItem("name") -> nodeValue) && strtolower($meta -> attributes -> getNamedItem("name") -> nodeValue) === "robots")
+                elseif (isset($attrs -> getNamedItem("name") -> nodeValue) && strtolower($attrs -> getNamedItem("name") -> nodeValue) === "robots")
                 {
-                    $metaContent = strtolower($meta -> attributes -> getNamedItem("content") -> nodeValue);
+                    $metaContent = strtolower($attrs -> getNamedItem("content") -> nodeValue);
                     $metaRobots = explode(',', $metaContent);
                     foreach ($metaRobots as $k => $v)
                     {
@@ -196,17 +197,18 @@ class OpenCrawler
             for ($c = 0; $c < $links -> length; $c++)
             {
                 $link = $links -> item($c);
+                $attrs =& $link -> attributes;
                 
-                if (strtolower($link -> attributes -> getNamedItem("rel") -> nodeValue) === "canonical")
+                if (strtolower($attrs -> getNamedItem("rel") -> nodeValue) === "canonical")
                 {
-                    $url = $this -> absoluteUrl($link -> attributes -> getNamedItem("href") -> nodeValue);
+                    $url = $this -> absoluteUrl($attrs -> getNamedItem("href") -> nodeValue);
                 }
-                elseif (array_search(strtolower($link -> attributes -> getNamedItem("rel") -> nodeValue), array(
+                elseif (array_search(strtolower($attrs -> getNamedItem("rel") -> nodeValue), array(
                     'appendix', 'chapter', 'contents', 'copyright', 'glossary', 'help', 'index', 'license', 'next', 'prev', 'previous', 'section', 'start', 
                     'subsection', 'tag', 'toc', 'home', 'directory', 'bibliography', 'cite', 'archive', 'archives', 'external'
                     )))
                 {
-                    $this -> pushLink($this -> absoluteUrl($link -> attributes -> getNamedItem("href") -> nodeValue));
+                    $this -> pushLink($this -> absoluteUrl($attrs -> getNamedItem("href") -> nodeValue));
                 }
                 
             }
@@ -344,27 +346,28 @@ class OpenCrawler
      */
     public function loadNext()
     {
-        $this -> bin['history'] = array_values(array_unique($this -> bin['history']));
+        $history =& $this -> bin['history'];
+        $history = array_values(array_unique($history));
         if (isset($this -> handler['a']))
         {
             $this -> handler['a'] = array_values(array_unique($this -> handler['a']));
         }
         
-        if (sizeof($this -> bin['history']) > OPENCRAWLER_HISTORY)
+        if (sizeof($history) > OPENCRAWLER_HISTORY)
         {
-            while (sizeof($this -> bin['history']) > OPENCRAWLER_HISTORY)
+            while (sizeof($history) > OPENCRAWLER_HISTORY)
             {
-                $this -> bin['history'] = array_shift($this -> bin['history']);
+                $history = array_shift($history);
             }
-            $this -> bin['history'] = array_values(array_unique($this -> bin['history']));
+            $history = array_values(array_unique($history));
         }
         
-        $key = array_search($this -> handler['url'], $this -> bin['history']);
-        if (isset($this -> bin['history'][$key + 1]))
+        $key = array_search($this -> handler['url'], $history);
+        if (isset($history[$key + 1]))
         {
-            if (parse_url($this -> bin['history'][$key], PHP_URL_HOST) == parse_url($this -> bin['history'][$key + 1], PHP_URL_HOST))
+            if (parse_url($history[$key], PHP_URL_HOST) == parse_url($history[$key + 1], PHP_URL_HOST))
             {
-                $domain = parse_url($this -> bin['history'][$key], PHP_URL_HOST);
+                $domain = parse_url($history[$key], PHP_URL_HOST);
                 foreach ($this -> bin['robots'][$domain] as $agent => $rules)
                 {
                     if (isset($rules['Crawl-delay']))
@@ -383,7 +386,7 @@ class OpenCrawler
                 }
                 
             }
-            $this -> loadUrl($this -> bin['history'][$key + 1]);
+            $this -> loadUrl($history[$key + 1]);
         }
         else
         {
@@ -479,7 +482,8 @@ class OpenCrawler
         $path = preg_replace('/^([a-z]+):\/\/([^\/]+)(.*)/', "$3", $url);
         if (isset($this -> bin['robots'][$domain]))
         {
-            foreach ($this -> bin['robots'][$domain] as $agent => $rules)
+            $robots_txt =& $this -> bin['robots'][$domain];
+            foreach ($robots_txt as $agent => $rules)
             {
                 if (trim($agent) == '')
                 {
@@ -487,7 +491,7 @@ class OpenCrawler
                 }
                 if (preg_match('/^'.str_replace('*', '.*', $agent).'$/i', OPENCRAWLER_AGENT))
                 {
-                    foreach ($this -> bin['robots'][$domain][$agent] as $k => $v)
+                    foreach ($robots_txt[$agent] as $k => $v)
                     {
                         if (is_string($v) && !is_numeric($v) && !is_bool($v))
                         {
