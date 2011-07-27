@@ -12,7 +12,3 @@ into your website).
 
 ## Who can use Open Crawler?
 Any person who like the World Wide Web, and of course all the professional programmers, or not ;)
-
-### To Do
-1. Sitemaps
-2. AJAX Crawling http://code.google.com/web/ajaxcrawling/
