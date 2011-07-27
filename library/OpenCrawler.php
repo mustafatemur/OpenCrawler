@@ -316,16 +316,16 @@ class OpenCrawler
         $headers = preg_split('/[\n|\r]/', $headers, 0, PREG_SPLIT_NO_EMPTY);
         foreach ($headers as $k => $v)
         {
-            if (!preg_match('/^([a-z0-9\-]+):( +)?(.*)$/i', $v, $matches))
+            if (!preg_match('/^([a-z0-9\-]+):( +)?(.*)$/i', $v, $matches) || ctype_digit($matches[1]) || $k == 0)
             {
-                continue;
+                $headers_new[$k] = $v;
             }
-            if (!ctype_digit($matches[1]) && $k != 0)
+            else
             {
-                unset($headers[$k]);
+                $headers_new[trim($matches[1])] = $matches[3];
             }
-            $headers[trim($matches[1])] = $matches[3];
         }
+        $headers = $headers_new;
         
         curl_close($curl);
         return $headers;
