@@ -157,10 +157,10 @@ class OpenCrawler
         /**
          * Extraction of Contents
          */
-        $this -> handler['DOMDocument'] = new DOMDocument;
-        @$this -> handler['DOMDocument'] -> loadHTML($this -> loadContent($url));
+        $this -> handler['dom'] = new DOMDocument;
+        @$this -> handler['dom'] -> loadHTML($this -> loadContent($url));
         
-        if ($metas = $this -> handler['DOMDocument'] -> getElementsByTagName('meta'))
+        if ($metas = $this -> handler['dom'] -> getElementsByTagName('meta'))
         {
             for ($c = 0; $c < $metas -> length; $c++)
             {
@@ -190,7 +190,7 @@ class OpenCrawler
             }
         }
         
-        if ($links = $this -> handler['DOMDocument'] -> getElementsByTagName('link'))
+        if ($links = $this -> handler['dom'] -> getElementsByTagName('link'))
         {
             for ($c = 0; $c < $links -> length; $c++)
             {
@@ -213,7 +213,7 @@ class OpenCrawler
         
         if (!isset($metaRobots) || !array_search('nofollow', $metaRobots))
         {
-            $this -> loadLinks($this -> handler['DOMDocument']);
+            $this -> loadLinks($this -> handler['dom']);
         }
         
         if (isset($metaRobots) && array_search('noindex', $metaRobots))
