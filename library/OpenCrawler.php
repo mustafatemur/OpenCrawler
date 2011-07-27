@@ -442,6 +442,7 @@ class OpenCrawler
             }
             
             $aHref = $this -> absoluteUrl($base, $a -> attributes -> getNamedItem("href") -> nodeValue);
+            $aHref = str_replace(array("\n", "\r", "\t"), null, trim($aHref));
             
             if (preg_match('/^(javascript\:)/', $aHref))
             {
@@ -473,7 +474,7 @@ class OpenCrawler
      */
     public function pushLink($url)
     {
-        $url = $this -> absoluteUrl($this -> handler['url'], $url);
+        $url = str_replace(array("\n", "\r", "\t"), null, trim(strip_tags($url)));
         
         if (!preg_match('/^!/', parse_url($url, PHP_URL_FRAGMENT)))
         {
@@ -495,13 +496,12 @@ class OpenCrawler
             return false;
         }
         
-        if ($parsed = @parse_url($url) && isset($parsed) && is_array($parsed))
+        $parsed = parse_url($url);
+        $parsed = is_array($parsed) ? $parsed : array();
+        if (array_key_exists('scheme', $parsed) && preg_match('/^https?:/', $url))
         {
-            if (array_key_exists('scheme', $parsed) && preg_match('/^https?:/', $url))
-            {
-                $this -> handler['a'][] = trim($url);
-                $this -> bin['history'][] = trim($url);
-            }
+            $this -> handler['a'][] = trim($url);
+            $this -> bin['history'][] = trim($url);
         }
     }
 
