@@ -1,6 +1,32 @@
 <?php
 
 /**
+ * 
+ * Agent (used in the User Agent and the control of robots.txt)
+ * @var string
+ */
+define(OPENCRAWLER_AGENT, 'OpenCrawler');
+/**
+ * 
+ * cURL referer for the extraction of content
+ * @var string
+ */
+define(OPENCRAWLER_REFERER, 'https://github.com/EmanueleMinotto/OpenCrawler');
+/**
+ * given the structure of the OpenCrawler history is impossible to determine the exact date of the visit of a given page, 
+ * so we need for the Re-visit policy set a minimum size limit for the array
+ * @link http://en.wikipedia.org/wiki/Web_crawler#Re-visit_policy
+ * @var int
+ */
+define('OPENCRAWLER_HISTORY', 15000);
+/**
+ * 
+ * Cookies file & directory
+ * @var string
+ */
+define('OPENCRAWLER_COOKIES', dirname(__FILE__) . DIRECTORY_SEPARATOR . 'OpenCrawlerCookies.txt');
+
+/**
  * OpenCrawler
  * 
  * Class for spidering the network in a standalone file
@@ -27,31 +53,6 @@ class OpenCrawler
      * @var array
      */
     protected $bin = array();
-    /**
-     * 
-     * Agent (used in the User Agent and the control of robots.txt)
-     * @var string
-     */
-    private $agent = 'OpenCrawler';
-    /**
-     * 
-     * cURL referer for the extraction of content
-     * @var string
-     */
-    private $referer = 'https://github.com/EmanueleMinotto/OpenCrawler';
-    /**
-     * given the structure of the OpenCrawler history is impossible to determine the exact date of the visit of a given page, 
-     * so we need for the Re-visit policy set a minimum size limit for the array
-     * @link http://en.wikipedia.org/wiki/Web_crawler#Re-visit_policy
-     * @var int
-     */
-    private $history = 15000;
-    /**
-     * 
-     * Cookies file & directory
-     * @var string
-     */
-    private $cookies;
 
     /**
      * Class constructor
@@ -59,7 +60,7 @@ class OpenCrawler
     function __construct()
     {
         $this -> bin['history'] = array();
-        $this -> cookies = dirname(__FILE__) . DIRECTORY_SEPARATOR . 'OpenCrawlerCookies.txt';
+        OPENCRAWLER_COOKIES = ;
     }
 
     /**
@@ -79,7 +80,7 @@ class OpenCrawler
         /**
          * Compatibility with the User-Agent browser without losing the special crawler
          */
-        ini_set('user_agent', 'Mozilla/5.0 (compatible; ' . $this -> agent . '; +' . $this -> referer . '; Trident/4.0)');
+        ini_set('user_agent', 'Mozilla/5.0 (compatible; ' . OPENCRAWLER_AGENT . '; +' . OPENCRAWLER_REFERER . '; Trident/4.0)');
         
         /**
          * Redirect via HTTP Location
@@ -321,9 +322,9 @@ class OpenCrawler
             CURLOPT_BINARYTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_COOKIESESSION => true,
-            CURLOPT_COOKIEJAR => $this -> cookies,
-            CURLOPT_COOKIEFILE => $this -> cookies,
-            CURLOPT_REFERER => $this -> referer,
+            CURLOPT_COOKIEJAR => OPENCRAWLER_COOKIES,
+            CURLOPT_COOKIEFILE => OPENCRAWLER_COOKIES,
+            CURLOPT_REFERER => OPENCRAWLER_REFERER,
             CURLOPT_USERAGENT => ini_get('user_agent'),
             CURLOPT_TIMEOUT => 300,
             CURLOPT_MAXREDIRS => 10
@@ -350,9 +351,9 @@ class OpenCrawler
             $this -> handler['a'] = array_values(array_unique($this -> handler['a']));
         }
         
-        if (sizeof($this -> _bin['history']) > $this -> history)
+        if (sizeof($this -> _bin['history']) > OPENCRAWLER_HISTORY)
         {
-            while (sizeof($this -> _bin['history']) > $this -> history)
+            while (sizeof($this -> _bin['history']) > OPENCRAWLER_HISTORY)
             {
                 $this -> _bin['history'] = array_shift($this -> _bin['history']);
             }
@@ -372,9 +373,9 @@ class OpenCrawler
                     $tempG = $this -> _bin['robots'][$domain]['*']['Crawl-delay'];
                 }
                 
-                if (isset($this -> _bin['robots'][$domain][$this -> agent]['Crawl-delay']))
+                if (isset($this -> _bin['robots'][$domain][OPENCRAWLER_AGENT]['Crawl-delay']))
                 {
-                    $tempS = $this -> _bin['robots'][$domain][$this -> agent]['Crawl-delay'];
+                    $tempS = $this -> _bin['robots'][$domain][OPENCRAWLER_AGENT]['Crawl-delay'];
                 }
                 
                 if (isset($tempS) && is_numeric($tempS))
@@ -484,7 +485,7 @@ class OpenCrawler
                 {
                     continue;
                 }
-                if (preg_match('/^'.str_replace('*', '.*', $agent).'$/i', $this -> agent))
+                if (preg_match('/^'.str_replace('*', '.*', $agent).'$/i', OPENCRAWLER_AGENT))
                 {
                     foreach ($this -> bin['robots'][$domain][$agent] as $k => $v)
                     {
