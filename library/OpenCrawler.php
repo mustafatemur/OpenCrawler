@@ -273,7 +273,7 @@ class OpenCrawler
             {
                 $UserAgent = trim($match[1]);
             }
-            elseif (preg_match('/^Disallow:(.*)/i', $rule, $match) && trim($match[1]) != null)
+            elseif (preg_match('/^Disallow:(.*)/i', $rule, $match) && trim($match[1]) != null && preg_match('/^'.str_replace('*', '.*', $UserAgent).'$/i', OPENCRAWLER_AGENT))
             {
                 $robots[$UserAgent][] = trim($match[1]);
             }
@@ -331,8 +331,8 @@ class OpenCrawler
         curl_setopt_array($curl, $options);
         $content = curl_exec($curl);
         
-        $this -> handler['CurlInfo'] = curl_getinfo($curl);
-        $this -> bin['CurlInfo'][$url] =& $this -> handler['CurlInfo'];
+        $this -> handler['info'] = curl_getinfo($curl);
+        $this -> bin['info'][$url] =& $this -> handler['info'];
         
         curl_close($curl);
         unset($curl, $options);
@@ -408,6 +408,11 @@ class OpenCrawler
         
         foreach ($DOMDocument -> getElementsByTagName('a') as $a)
         {
+            if (!isset($a -> attributes -> getNamedItem("href") -> nodeValue))
+            {
+                continue;
+            }
+            
             $aHref = $this -> absoluteUrl($base, $a -> attributes -> getNamedItem("href") -> nodeValue);
             
             if (preg_match('/^(javascript\:)/', $aHref))
@@ -445,7 +450,7 @@ class OpenCrawler
             $url = preg_replace('/^([^#]+)(#.+)$/', "$1", $url);
         }
         
-        if (!isset($url) || array_search($url, $this -> handler['a']))
+        if (!isset($url) || (isset($this -> handler['a']) && array_search($url, $this -> handler['a'])))
         {
             return false;
         }
