@@ -60,7 +60,6 @@ class OpenCrawler
     function __construct()
     {
         $this -> bin['history'] = array();
-        OPENCRAWLER_COOKIES = ;
     }
 
     /**
