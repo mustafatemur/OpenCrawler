@@ -275,7 +275,7 @@ class OpenCrawler
             {
                 $robots[$UserAgent][] = trim($match[1]);
             }
-            elseif (preg_match('/^Crawl\-delay:(.*)/i', $rule, $match) && trim($match[1]) != null)
+            elseif (preg_match('/^Crawl\-delay:(.*)/i', $rule, $match) && trim($match[1]) != null && preg_match('/^'.str_replace('*', '.*', $UserAgent).'$/i', OPENCRAWLER_AGENT))
             {
                 $robots[$UserAgent]['Crawl-delay'] = trim($match[1]);
             }
