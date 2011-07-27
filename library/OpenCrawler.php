@@ -5,13 +5,13 @@
  * Agent (used in the User Agent and the control of robots.txt)
  * @var string
  */
-define(OPENCRAWLER_AGENT, 'OpenCrawler');
+define('OPENCRAWLER_AGENT', 'OpenCrawler');
 /**
  * 
  * cURL referer for the extraction of content
  * @var string
  */
-define(OPENCRAWLER_REFERER, 'https://github.com/EmanueleMinotto/OpenCrawler');
+define('OPENCRAWLER_REFERER', 'https://github.com/EmanueleMinotto/OpenCrawler');
 /**
  * given the structure of the OpenCrawler history is impossible to determine the exact date of the visit of a given page, 
  * so we need for the Re-visit policy set a minimum size limit for the array
