@@ -118,7 +118,15 @@ class OpenCrawler
         $this -> handler['headers'] = $temp;
         unset($temp);
         
-        $this -> handler['url'] =& $url;
+        if (preg_match('/#!([^#]+)$/', $url))
+        {
+            $this -> handler['url'] = $url;
+            $url = $this -> ajaxUrlTransform($url);
+        }
+        else
+        {
+            $this -> handler['url'] =& $url;
+        }
         
         if ($key = array_search($url, $this -> bin['history']))
         {
@@ -191,6 +199,17 @@ class OpenCrawler
                         $metaRobots[$k] = trim($v);
                     }
                     
+                }
+                elseif (strtolower($attrs -> getNamedItem("name") -> nodeValue) === "fragment")
+                {
+                    if ($attrs -> getNamedItem("content") -> nodeValue === '!')
+                    {
+                        parse_str(parse_url($url, PHP_URL_QUERY), $parameters);
+                        if (!array_key_exists('_escaped_fragment_', $parameters))
+                        {
+                            $this -> loadAjaxLinks($this -> handler['url']);
+                        }
+                    }
                 }
             }
         }
@@ -1061,5 +1080,51 @@ class OpenCrawler
         {
             return false;
         }
+    }
+
+    /**
+     * Loading hidden links
+     * @param string $url
+     */
+    function loadAjaxLinks($url)
+    {
+        $hiddenUrl = $this -> ajaxUrlTransform($url);
+        
+        $OpenCrawlerSon = new OpenCrawler;
+        $OpenCrawlerSon -> loadUrl($hiddenUrl);
+        foreach ($OpenCrawlerSon -> handler['a'] as $hiddenA)
+        {
+            $this -> pushLink($hiddenA);
+        }
+        unset($OpenCrawlerSon);
+    }
+    
+    /**
+     * Tranforming an URL from dynamic form to static (classic) form
+     * @param string $dynUrl
+     */
+    function ajaxUrlTransform($dynUrl)
+    {
+        if ($urlQuery = parse_url($dynUrl, PHP_URL_QUERY))
+        {
+            parse_str($urlQuery, $urlQueryArray);
+        }
+        
+        if ($fragment = @parse_url($dynUrl, PHP_URL_FRAGMENT))
+        {
+            if (preg_match('/^!/', $fragment))
+            {
+                $fragment = substr($fragment, 1);
+            }
+            else
+            {
+                return false;
+            }
+        }
+        $urlQueryArray['_escaped_fragment_'] = (isset($fragment)) ? $fragment : '';
+        
+        $fixUrl = preg_replace('/^([^(\?|#)]+)(.*)$/', "$1?" . http_build_query($urlQueryArray), $dynUrl);
+        
+        return $fixUrl;
     }
 }
