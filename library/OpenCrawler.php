@@ -62,6 +62,7 @@ class OpenCrawler
     function __construct()
     {
         $this -> bin['history'] = array();
+        $this -> handler['a'] = array();
     }
 
     /**
@@ -87,7 +88,7 @@ class OpenCrawler
         {
             if (!array_search($url, $this -> bin['history']))
             {
-                $this -> bin['history'][] = $url;
+                $this -> pushLink($url, true);
                 array_values(array_unique($this -> bin['history']));
             }
             
@@ -106,12 +107,12 @@ class OpenCrawler
             }
             
             $url = $FullUri;
-            $temp = $this -> ParseHeaders($url);
+            $temp = $this -> parseHeaders($url);
         }
         
-        if (!array_search($url, $this -> bin['history']))
+        if ($this -> isValid($url))
         {
-            $this -> bin['history'][] = $url;
+            $this -> pushLink($url, true);
         }
         
         $this -> handler['headers'] = $temp;
@@ -146,7 +147,7 @@ class OpenCrawler
          */
         $this -> handler['robots'] = $this -> parseRobots($url);
         
-        if (!$this -> crawlerAccess($url))
+        if (!$this -> isValid($url, true))
         {
             return false;
         }
@@ -156,6 +157,8 @@ class OpenCrawler
          */
         $this -> handler['dom'] = new DOMDocument;
         @$this -> handler['dom'] -> loadHTML($this -> loadContent($url));
+        
+        $this -> handler['a'] = array();
         
         if ($metas = $this -> handler['dom'] -> getElementsByTagName('meta'))
         {
@@ -421,20 +424,18 @@ class OpenCrawler
 
     /**
      * Extraction of anchor links via the DOMDocument object
-     * @param mixed &$DOMDocument DOMDocument Object
+     * @param mixed &$dom DOMDocument Object
      */
-    public function loadLinks(&$DOMDocument)
+    public function loadLinks(&$dom)
     {
-        $bases = $DOMDocument -> getElementsByTagName('base');
+        $bases = $dom -> getElementsByTagName('base');
         $base = $this -> handler['url'];
         if ($bases -> length && $tmp_href =& $bases -> item(0) -> attributes -> getNamedItem("href") && $tmp_href -> nodeValue)
         {
             $base = $bases -> item(0) -> attributes -> getNamedItem("href") -> nodeValue;
         }
         
-        $this -> handler['a'] = array();
-        
-        foreach ($DOMDocument -> getElementsByTagName('a') as $a)
+        foreach ($dom -> getElementsByTagName('a') as $a)
         {
             if (!isset($a -> attributes -> getNamedItem("href") -> nodeValue))
             {
@@ -442,14 +443,10 @@ class OpenCrawler
             }
             
             $aHref = $this -> absoluteUrl($base, $a -> attributes -> getNamedItem("href") -> nodeValue);
-            $aHref = str_replace(array("\n", "\r", "\t"), null, trim($aHref));
+            $aHref = $this -> cleanUrl($aHref);
             
-            if (preg_match('/^(javascript\:)/', $aHref))
-            {
-                continue;
-            }
             
-            if (!isset($aHref) || array_search($aHref, $this -> handler['a']))
+            if (!$this -> isValid($aHref))
             {
                 continue;
             }
@@ -466,43 +463,6 @@ class OpenCrawler
         }
         $this -> bin['history'] = array_values(array_unique($this -> bin['history']));
         $this -> handler['a'] = array_values(array_unique($this -> handler['a']));
-    }
-
-    /**
-     * Loading a single Link
-     * @param string $url Link to push in the internal stack
-     */
-    public function pushLink($url)
-    {
-        $url = str_replace(array("\n", "\r", "\t"), null, trim(strip_tags($url)));
-        
-        if (!preg_match('/^!/', parse_url($url, PHP_URL_FRAGMENT)))
-        {
-            $url = preg_replace('/^([^#]+)(#.+)$/', "$1", $url);
-        }
-        
-        if (!isset($url) || (isset($this -> handler['a']) && array_search($url, $this -> handler['a'])))
-        {
-            return false;
-        }
-        
-        if (array_search($url, $this -> bin['history']) || $url == $this -> handler['url'])
-        {
-            return false;
-        }
-        
-        if (!$this -> crawlerAccess($url))
-        {
-            return false;
-        }
-        
-        $parsed = parse_url($url);
-        $parsed = is_array($parsed) ? $parsed : array();
-        if (array_key_exists('scheme', $parsed) && preg_match('/^https?:/', $url))
-        {
-            $this -> handler['a'][] = trim($url);
-            $this -> bin['history'][] = trim($url);
-        }
     }
 
     /**
@@ -543,14 +503,86 @@ class OpenCrawler
         return true;
     }
     
+    /**
+     * 
+     * Extract OpenCrawler visits history
+     */
     public function getHistory()
     {
         return $this -> bin['history'];
     }
     
+    /**
+     * 
+     * Clear OpenCrawler history
+     */
     public function clearHistory()
     {
         $this -> bin['history'] = array();
+        return $this;
+    }
+    
+    /**
+     * 
+     * Prevent strange things
+     * @param string $url
+     */
+    private function cleanUrl($url)
+    {
+        return trim(str_replace(array("\n", "\r", "\t"), null, strip_tags($url)));
+    }
+    
+    /**
+     * 
+     * Check if an URL can be added to history and anchors arrays
+     * @param string $url
+     */
+    protected function isValid($url, $syntaxOnly = false)
+    {
+        // Is this a valid URL?
+        if (!filter_var($url, FILTER_VALIDATE_URL) || !preg_match('/^https?:/i', $url))
+        {
+            return false;
+        }
+        // Is it Javascript?
+        if (preg_match('/^(javascript\:)/i', $url))
+        {
+            return false;
+        }
+        // Can our crawler access to that URL?
+        if (!$this -> crawlerAccess($url))
+        {
+            return false;
+        }
+        // Is this URL already in history or in current page anchors?
+        if (!$syntaxOnly)
+        {
+            if (array_search($url, $this -> bin['history']) || array_search($url, $this -> handler['a']))
+            {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
+    /**
+     * Loading a single Link
+     * @param string $url Link to push in the internal stack
+     * @param bool $historyOnly
+     */
+    public function pushLink($url, $historyOnly = false)
+    {
+        $url = $this -> cleanUrl($url);
+        
+        if ($this -> isValid($url))
+        {
+            if (!$historyOnly)
+            {
+                $this -> handler['a'][] = $url;
+            }
+            $this -> bin['history'][] = $url;
+        }
         return $this;
     }
 
@@ -561,6 +593,19 @@ class OpenCrawler
     ****************************************************************/
     public function absoluteUrl($base, $path = null, $fragment = false)
     {
+        if (!filter_var(trim($base), FILTER_VALIDATE_URL))
+        {
+            $base = $this -> handler['url'];
+        }
+        
+        // forget case
+        if (preg_match('/^:?\/\/(.*)$/', $path))
+        {
+            $path = preg_replace('/^:?\/\/(.*)$/', parse_url($base, PHP_URL_SCHEME).'://'."$1", $path);
+            $path = !$fragment ? trim(preg_replace('/(.*)?\#(.*)/', "$1", $path)) : $path;
+            return $path;
+        }
+        
         $path = trim($path);
         $base = trim($base);
         $base_parse = @parse_url($base);
