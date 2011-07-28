@@ -146,6 +146,10 @@ class OpenCrawler
          * Robot access control
          */
         $this -> handler['robots'] = $this -> parseRobots($url);
+        if (!isset($this -> handler['sitemaps']))
+        {
+            $this -> loadSitemaps($this -> absoluteUrl($url, 'sitemap.xml'));
+        }
         
         if (!$this -> isValid($url, true))
         {
@@ -201,6 +205,10 @@ class OpenCrawler
                 if (strtolower($attrs -> getNamedItem("rel") -> nodeValue) === "canonical")
                 {
                     $url = $this -> absoluteUrl($attrs -> getNamedItem("href") -> nodeValue);
+                }
+                elseif (strtolower($link -> attributes -> getNamedItem("rel") -> nodeValue) === "sitemap")
+                {
+                    $this -> loadSitemaps($this -> absoluteUrl($link -> attributes -> getNamedItem("href") -> nodeValue));
                 }
                 elseif (array_search(strtolower($attrs -> getNamedItem("rel") -> nodeValue), array(
                     'appendix', 'chapter', 'contents', 'copyright', 'glossary', 'help', 'index', 'license', 'next', 'prev', 'previous', 'section', 'start', 
@@ -277,6 +285,10 @@ class OpenCrawler
             elseif (preg_match('/^Disallow:(.*)/i', $rule, $match) && trim($match[1]) != null && preg_match('/^'.str_replace('*', '.*', $UserAgent).'$/i', OPENCRAWLER_AGENT))
             {
                 $robots[$UserAgent][] = trim($match[1]);
+            }
+            elseif (preg_match('/^Sitemap:(.*)/i', $rule, $match) && array_key_exists('scheme', parse_url(trim($match[1]))))
+            {
+                $this -> loadSitemaps(trim($match[1]));
             }
             elseif (preg_match('/^Crawl\-delay:(.*)/i', $rule, $match) && trim($match[1]) != null && preg_match('/^'.str_replace('*', '.*', $UserAgent).'$/i', OPENCRAWLER_AGENT))
             {
@@ -869,5 +881,185 @@ class OpenCrawler
             }
         }
         return $str_array;
+    }
+    
+	/**
+     * Sitemaps Parsing
+     * @param string $url Sitemap URL to visit
+     * @return bool
+     */
+    function loadSitemaps($url)
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+        if (isset($this -> bin['sitemaps'][$host]))
+        {
+            return $this -> bin['sitemaps'][$host];
+        }
+        
+        /**
+         * Limit max sitemaps
+         */
+        $truncateLimit = (ini_get('max_execution_time') != 0) ? (200000 / 30 * ini_get('max_execution_time')) : 1073741824;
+        
+        $smHeader = $this -> parseHeaders($url);
+        
+        $smContentType = $smHeader['Content-Type'];
+        
+        if (is_array($smContentType))
+        {
+            $smContentType = $smContentType[sizeof($smContentType) - 1];
+        }
+        
+        if (preg_match('/application\/x\-gzip/', $smContentType))
+        {
+            $smContent = gzfile($url);
+            if (preg_match('/^</', $smContent[0]) && preg_match('/>$/', $smContent[sizeof($smContent) - 1]))
+            {
+                $smContent = implode($smContent);
+                if (strlen($smContent) > $truncateLimit)
+                {
+                    return false;
+                }
+                
+                $dom = new DOMDocument;
+                $dom -> loadXML($smContent);
+                
+                if ($dom -> getElementsByTagName('sitemapindex') -> length)
+                {
+                    if (ini_get('max_execution_time') != 0)
+                    {
+                        $this -> loadSitemaps($dom -> getElementsByTagName('loc') -> item(0) -> nodeValue);
+                    }
+                    else
+                    {
+                        foreach ($dom -> getElementsByTagName('loc') as $loc)
+                        {
+                            $this -> loadSitemaps($loc -> nodeValue);
+                        }
+                    }
+                }
+                elseif ($dom -> getElementsByTagName('urlset'))
+                {
+                    foreach ($dom -> getElementsByTagName('loc') as $loc)
+                    {
+                        $v = $loc -> nodeValue;
+                        
+                        if (!$this -> isValid($v) || $v == $this -> handler['url'])
+                        {
+                            continue;
+                        }
+                        
+                        $domain = parse_url($v, PHP_URL_HOST);
+                        if (!isset($this -> handler['sitemaps']) || !array_search($v, $this -> handler['sitemaps']))
+                        {
+                            $this -> handler['sitemaps'][] = $v;
+                        }
+                        if (!isset($this -> bin['sitemaps'][$domain]) || !array_search($v, $this -> bin['sitemaps'][$domain]))
+                        {
+                            $this -> bin['sitemaps'][$domain][] = $v;
+                        }
+                        $this -> pushLink($v, true);
+                    }
+                }
+            }
+            else
+            {
+                foreach ($smContent as $k => $v)
+                {
+                    if (!$this -> isValid($v) || $v == $this -> handler['url'])
+                    {
+                        continue;
+                    }
+                    
+                    $domain = parse_url($v, PHP_URL_HOST);
+                    if (!isset($this -> handler['sitemaps']) || !array_search($v, $this -> handler['sitemaps']))
+                    {
+                        $this -> handler['sitemaps'][] = $v;
+                    }
+                    if (!isset($this -> bin['sitemaps'][$domain]) || !array_search($v, $this -> bin['sitemaps'][$domain]))
+                    {
+                        $this -> bin['sitemaps'][$domain][] = $v;
+                    }
+                    $this -> pushLink($v, true);
+                }
+            }
+        }
+        elseif (preg_match('/xml/', $smContentType))
+        {
+            $smContent = $this -> LoadContent($url);
+            if (strlen($smContent) > $truncateLimit)
+            {
+                return false;
+            }
+            
+            $dom = new DOMDocument;
+            $dom -> loadXML($smContent);
+            
+            if ($dom -> getElementsByTagName('sitemapindex') -> length)
+            {
+                if (ini_get('max_execution_time') != 0)
+                {
+                    $this -> loadSitemaps($dom -> getElementsByTagName('loc') -> item(0) -> nodeValue);
+                }
+                else
+                {
+                    foreach ($dom -> getElementsByTagName('loc') as $loc)
+                    {
+                        $this -> loadSitemaps($loc -> nodeValue);
+                    }
+                }
+            }
+            elseif ($dom -> getElementsByTagName('urlset') -> length)
+            {
+                foreach ($dom -> getElementsByTagName('loc') as $loc)
+                {
+                    $v = $loc -> nodeValue;
+                    
+                    if (!$this -> isValid($v) || $v == $this -> handler['url'])
+                    {
+                        continue;
+                    }
+                    
+                    $domain = parse_url($v, PHP_URL_HOST);
+                    if (!isset($this -> handler['sitemaps']) || !array_search($v, $this -> handler['sitemaps']))
+                    {
+                        $this -> handler['sitemaps'][] = $v;
+                    }
+                    if (!isset($this -> bin['sitemaps'][$domain]) || !array_search($v, $this -> bin['sitemaps'][$domain]))
+                    {
+                        $this -> bin['sitemaps'][$domain][] = $v;
+                    }
+                    $this -> pushLink($v, true);
+                }
+           }
+        }
+        elseif (preg_match('/text\/plain/', $smContentType))
+        {
+            $smContent = file($url);
+            if (strlen(implode($smContent)) > $truncateLimit)
+            {
+                return false;
+            }
+            foreach ($smContent as $k => $v)
+            {
+                if (!$this -> isValid($v) || $v == $this -> handler['url'])
+                {
+                    continue;
+                }
+                
+                $domain = parse_url($v, PHP_URL_HOST);
+                if (!isset($this -> handler['sitemaps']) || !array_search($v, $this -> handler['sitemaps'])) {
+                    $this -> handler['sitemaps'][] = $v;
+                }
+                if (!isset($this -> bin['sitemaps'][$domain]) || !array_search($v, $this -> bin['sitemaps'][$domain])) {
+                    $this -> bin['sitemaps'][$domain][] = $v;
+                }
+                $this -> pushLink($v, true);
+            }
+        }
+        else
+        {
+            return false;
+        }
     }
 }
