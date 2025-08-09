@@ -89,7 +89,7 @@ class OpenCrawler
             if (!array_search($url, $this -> bin['history']))
             {
                 $this -> pushLink($url, true);
-                array_values(array_unique($this -> bin['history']));
+                $this -> bin['history'] = array_values(array_unique($this -> bin['history']));
             }
             
             if (isset($temp['Location']))
@@ -416,7 +416,7 @@ class OpenCrawler
         {
             while (sizeof($history) > OPENCRAWLER_HISTORY)
             {
-                $history = array_shift($history);
+                array_shift($history);
             }
             $history = array_values(array_unique($history));
         }
@@ -1109,7 +1109,7 @@ class OpenCrawler
         {
             parse_str($urlQuery, $urlQueryArray);
         }
-        
+
         if ($fragment = @parse_url($dynUrl, PHP_URL_FRAGMENT))
         {
             if (preg_match('/^!/', $fragment))
@@ -1122,9 +1122,9 @@ class OpenCrawler
             }
         }
         $urlQueryArray['_escaped_fragment_'] = (isset($fragment)) ? $fragment : '';
-        
+
         $fixUrl = preg_replace('/^([^(\?|#)]+)(.*)$/', "$1?" . http_build_query($urlQueryArray), $dynUrl);
-        
+
         return $fixUrl;
     }
 }
